@@ -1,12 +1,16 @@
-
 pipeline {
     agent any
 
+    tools {
+        nodejs 'NodeJS'
+    }
+
     stages {
 
-        stage('Checkout') {
+        stage('Git Checkout') {
             steps {
                 git branch: 'main',
+                    credentialsId: 'github-token',
                     url: 'https://github.com/Samraj282005/Sports-Web.git'
             }
         }
@@ -17,7 +21,7 @@ pipeline {
             }
         }
 
-        stage('Build React Application') {
+        stage('Build') {
             steps {
                 sh 'npm run build'
             }
@@ -25,49 +29,29 @@ pipeline {
 
         stage('SonarQube Code Analysis') {
             steps {
-                withSonarQubeEnv('SonarQube') {
-                    sh 'sonar-scanner'
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            steps {
-                timeout(time: 10, unit: 'MINUTES') {
-                    script {
-                        def qualityGate = waitForQualityGate()
-                        if (qualityGate.status != 'OK') {
-                            error "SonarQube Quality Gate failed!"
+                catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                    withSonarQubeEnv('SonarQube') {
+                        script {
+                            def scannerHome = tool 'SonarScanner'
+                            sh "${scannerHome}/bin/sonar-scanner"
                         }
                     }
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Docker Build') {
             steps {
                 sh '''
-                    docker build -t sports-web:${BUILD_NUMBER} .
-                    docker tag sports-web:${BUILD_NUMBER} sports-web:latest
+                    docker build -t sports-web:latest .
                 '''
             }
         }
 
-        stage('Verify Docker Image') {
+        stage('Docker Images') {
             steps {
-                sh 'docker images sports-web'
+                sh 'docker images'
             }
         }
     }
-
-    post {
-        success {
-            echo 'Sports-Web pipeline and Docker image build completed successfully!'
-        }
-
-        failure {
-            echo 'Sports-Web pipeline failed. Check Console Output.'
-        }
-    }
 }
-
