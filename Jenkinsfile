@@ -42,9 +42,7 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                sh '''
-                    docker build -t sports-web:latest .
-                '''
+                sh 'docker build -t sports-web:latest .'
             }
         }
 
