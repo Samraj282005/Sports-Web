@@ -1,3 +1,4 @@
+
 # Stage 1: Build React application
 FROM node:20-alpine AS builder
 
@@ -12,7 +13,7 @@ RUN npm run build
 # Stage 2: Production image
 FROM nginx:alpine
 
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/build /usr/share/nginx/html
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
