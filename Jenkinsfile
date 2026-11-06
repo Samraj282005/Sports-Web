@@ -10,9 +10,10 @@ pipeline {
         AWS_REGION = 'ap-south-1'
         AWS_ACCOUNT_ID = '054022771060'
         ECR_REPOSITORY = 'sample/html1'
-        REGISTRY = '054022771060.dkr.ecr.ap-south-1.amazonaws.com'
 
+        REGISTRY = '054022771060.dkr.ecr.ap-south-1.amazonaws.com'
         LOCAL_IMAGE = 'sports-web:latest'
+
         IMAGE_TAG = "${BUILD_NUMBER}"
         ECR_IMAGE = "${REGISTRY}/sample/html1:${BUILD_NUMBER}"
     }
@@ -22,7 +23,6 @@ pipeline {
         stage('Git Checkout') {
             steps {
                 git branch: 'main',
-                    credentialsId: 'github-token',
                     url: 'https://github.com/Samraj282005/Sports-Web.git'
             }
         }
@@ -33,13 +33,13 @@ pipeline {
             }
         }
 
-        stage('Build') {
+        stage('Build React Application') {
             steps {
                 sh 'npm run build'
             }
         }
 
-        stage('SonarQube Code Analysis') {
+        stage('SonarQube Analysis') {
             steps {
                 catchError(
                     buildResult: 'SUCCESS',
@@ -52,10 +52,8 @@ pipeline {
                             sh """
                                 ${scannerHome}/bin/sonar-scanner \
                                 -Dsonar.projectKey=Sports-Web \
-                                -Dsonar.projectName=Sports-Web \
                                 -Dsonar.sources=src \
-                                -Dsonar.exclusions=node_modules/**,dist/**,build/** \
-                                -Dsonar.sourceEncoding=UTF-8
+                                -Dsonar.exclusions=node_modules/**,build/**
                             """
                         }
                     }
@@ -63,62 +61,64 @@ pipeline {
             }
         }
 
+        stage('Check Docker Files') {
+            steps {
+                sh '''
+                    echo "Checking Dockerfile location..."
+                    ls -l src/Dockerfile
+                    echo "Checking Dockerfile contents..."
+                    head -30 src/Dockerfile
+                '''
+            }
+        }
+
         stage('Docker Build') {
             steps {
                 sh '''
-                    echo "Building Docker image..."
-                    docker build -t "$LOCAL_IMAGE" .
+                    docker build \
+                    -f src/Dockerfile \
+                    -t sports-web:latest .
                 '''
             }
         }
 
         stage('Docker Images') {
             steps {
-                sh '''
-                    echo "Available Docker images:"
-                    docker images
-                '''
+                sh 'docker images'
             }
         }
 
         stage('Trivy Security Scan') {
             steps {
                 sh '''
-                    echo "Scanning Docker image with Trivy..."
-
                     trivy image \
-                        --exit-code 1 \
-                        --severity HIGH,CRITICAL \
-                        "$LOCAL_IMAGE"
+                    --exit-code 1 \
+                    --severity HIGH,CRITICAL \
+                    sports-web:latest
                 '''
             }
         }
 
-        stage('Push to Amazon ECR') {
+        stage('Push to AWS ECR') {
             steps {
                 sh '''
-                    echo "Authenticating with AWS..."
+                    echo "Logging in to AWS ECR..."
 
-                    aws sts get-caller-identity
-
-                    echo "Logging in to Amazon ECR..."
-
-                    aws ecr get-login-password \
-                        --region "$AWS_REGION" | \
-                        docker login \
-                        --username AWS \
-                        --password-stdin "$REGISTRY"
+                    aws ecr get-login-password --region ${AWS_REGION} \
+                    | docker login \
+                    --username AWS \
+                    --password-stdin ${REGISTRY}
 
                     echo "Tagging Docker image..."
 
-                    docker tag "$LOCAL_IMAGE" "$ECR_IMAGE"
+                    docker tag ${LOCAL_IMAGE} ${ECR_IMAGE}
 
-                    echo "Pushing Docker image to ECR..."
+                    echo "Pushing image to ECR..."
 
-                    docker push "$ECR_IMAGE"
+                    docker push ${ECR_IMAGE}
 
-                    echo "Successfully pushed image:"
-                    echo "$ECR_IMAGE"
+                    echo "Image pushed successfully!"
+                    echo ${ECR_IMAGE}
                 '''
             }
         }
@@ -126,15 +126,15 @@ pipeline {
 
     post {
         success {
-            echo 'Pipeline completed successfully! Docker image pushed to Amazon ECR.'
+            echo 'Pipeline completed successfully!'
         }
 
         failure {
-            echo 'Pipeline failed. Please check the Console Output.'
+            echo 'Pipeline failed. Check the console output.'
         }
 
         always {
-            echo 'Pipeline execution completed.'
+            echo 'Jenkins pipeline execution finished.'
         }
     }
 }
