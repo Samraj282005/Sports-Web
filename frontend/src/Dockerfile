@@ -1,4 +1,4 @@
-```dockerfile
+
 # Use Node.js image
 FROM node:18-alpine
 
@@ -25,4 +25,3 @@ EXPOSE 3000
 
 # Start application
 CMD ["serve", "-s", "build", "-l", "3000"]
-```
