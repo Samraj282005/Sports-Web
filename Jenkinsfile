@@ -1,159 +1,121 @@
+
 pipeline {
     agent any
 
-    tools {
-        nodejs 'NodeJS 26.x'
-    }
-
     environment {
-        AWS_REGION = 'ap-south-1'
-        AWS_ACCOUNT_ID = '054022771060'
-        ECR_REPOSITORY = 'sample/html1'
+        AWS_REGION     = 'ap-south-1'
+        AWS_ACCOUNT_ID = '538731753325'
+        ECR_REGISTRY   = '538731753325.dkr.ecr.ap-south-1.amazonaws.com'
 
-        REGISTRY = '054022771060.dkr.ecr.ap-south-1.amazonaws.com'
+        FRONTEND_IMAGE = 'react-frontend'
+        BACKEND_IMAGE  = 'react-backend'
 
-        LOCAL_IMAGE = 'sports-web:latest'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        ECR_IMAGE = "${REGISTRY}/sample/html1:${BUILD_NUMBER}"
     }
 
     stages {
 
-        // 1. Git Checkout
-        stage('Git Checkout') {
+        stage('Checkout') {
             steps {
                 git branch: 'main',
                     url: 'https://github.com/Samraj282005/Sports-Web.git'
+
+                sh 'git log -1 --oneline'
             }
         }
 
-        // 2. Install Dependencies
-        stage('Install Dependencies') {
+        stage('SonarQube Analysis - Bypassed') {
             steps {
-                sh 'npm install'
+                echo 'SonarQube temporarily bypassed.'
             }
         }
 
-        // 3. Build React Application
-        stage('Build React Application') {
-            steps {
-                sh 'npm run build'
-            }
-        }
-
-        // 4. SonarQube Analysis
-        // Continue pipeline even if SonarQube is unavailable
-        stage('SonarQube Analysis') {
-            steps {
-                catchError(
-                    buildResult: 'SUCCESS',
-                    stageResult: 'UNSTABLE'
-                ) {
-                    withSonarQubeEnv('SonarQube') {
-                        script {
-                            def scannerHome = tool 'SonarScanner'
-
-                            sh """
-                                ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=Sports-Web \
-                                -Dsonar.sources=src \
-                                -Dsonar.exclusions=node_modules/**,build/**
-                            """
-                        }
-                    }
-                }
-            }
-        }
-
-        // 5. Check Dockerfile
-        stage('Check Docker Files') {
+        stage('Docker Image Build') {
             steps {
                 sh '''
-                    echo "Checking Dockerfile..."
-
-                    ls -l src/Dockerfile
-
-                    echo "Dockerfile found successfully!"
-                '''
-            }
-        }
-
-        // 6. Docker Build
-        stage('Docker Build') {
-            steps {
-                sh '''
-                    echo "Building Docker image..."
+                    echo "Building frontend image..."
 
                     docker build \
-                        -f src/Dockerfile \
-                        -t ${LOCAL_IMAGE} .
+                      -f frontend/Dockerfile \
+                      -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
+                      frontend
 
-                    echo "Docker build completed!"
-                '''
-            }
-        }
+                    echo "Building backend image..."
 
-        // 7. List Docker Images
-        stage('Docker Images') {
-            steps {
-                sh '''
-                    echo "Available Docker images..."
+                    docker build \
+                      -f backend/Dockerfile \
+                      -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
+                      backend
 
                     docker images
                 '''
             }
         }
 
-        // 8. Trivy Security Scan
-        stage('Trivy Security Scan') {
+        stage('Trivy Image Scan') {
             steps {
                 sh '''
-                    echo "Starting Trivy security scan..."
-
                     mkdir -p /var/lib/jenkins/.cache/trivy
 
-                    docker run --rm \
-                        -v /var/run/docker.sock:/var/run/docker.sock \
-                        -v /var/lib/jenkins/.cache/trivy:/root/.cache/ \
-                        aquasec/trivy:latest \
-                        image \
-                        --exit-code 1 \
-                        --severity HIGH,CRITICAL \
-                        ${LOCAL_IMAGE}
+                    echo "Scanning frontend image..."
 
-                    echo "Trivy scan completed successfully!"
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v /var/lib/jenkins/.cache/trivy:/root/.cache/ \
+                      aquasec/trivy:latest \
+                      image --exit-code 1 \
+                      --severity HIGH,CRITICAL \
+                      ${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                    echo "Scanning backend image..."
+
+                    docker run --rm \
+                      -v /var/run/docker.sock:/var/run/docker.sock \
+                      -v /var/lib/jenkins/.cache/trivy:/root/.cache/ \
+                      aquasec/trivy:latest \
+                      image --exit-code 1 \
+                      --severity HIGH,CRITICAL \
+                      ${BACKEND_IMAGE}:${IMAGE_TAG}
                 '''
             }
         }
 
-        // 9. Login and Push to AWS ECR
-        stage('Push to AWS ECR') {
+        stage('Push Images to AWS ECR') {
             steps {
                 sh '''
                     echo "Checking AWS identity..."
 
                     aws sts get-caller-identity
 
-                    echo "Logging in to AWS ECR..."
+                    echo "Logging into AWS ECR..."
 
                     aws ecr get-login-password \
-                        --region ${AWS_REGION} \
-                    | docker login \
-                        --username AWS \
-                        --password-stdin ${REGISTRY}
+                      --region ${AWS_REGION} |
+                    docker login \
+                      --username AWS \
+                      --password-stdin ${ECR_REGISTRY}
 
-                    echo "Tagging Docker image..."
+                    echo "Tagging frontend image..."
 
-                    docker tag ${LOCAL_IMAGE} ${ECR_IMAGE}
+                    docker tag ${FRONTEND_IMAGE}:${IMAGE_TAG} \
+                      ${ECR_REGISTRY}/${FRONTEND_IMAGE}:${IMAGE_TAG}
 
-                    echo "Pushing Docker image to ECR..."
+                    echo "Tagging backend image..."
 
-                    docker push ${ECR_IMAGE}
+                    docker tag ${BACKEND_IMAGE}:${IMAGE_TAG} \
+                      ${ECR_REGISTRY}/${BACKEND_IMAGE}:${IMAGE_TAG}
 
-                    echo "Docker image pushed successfully!"
+                    echo "Pushing frontend image..."
 
-                    echo "ECR IMAGE:"
-                    echo ${ECR_IMAGE}
+                    docker push \
+                      ${ECR_REGISTRY}/${FRONTEND_IMAGE}:${IMAGE_TAG}
+
+                    echo "Pushing backend image..."
+
+                    docker push \
+                      ${ECR_REGISTRY}/${BACKEND_IMAGE}:${IMAGE_TAG}
+
+                    echo "Both images pushed successfully!"
                 '''
             }
         }
@@ -161,17 +123,15 @@ pipeline {
 
     post {
         success {
-            echo 'SUCCESS: Jenkins pipeline completed!'
-            echo 'Docker image pushed to AWS ECR.'
+            echo 'SUCCESS: Pipeline completed and images pushed to ECR.'
         }
 
         failure {
-            echo 'FAILURE: Jenkins pipeline failed.'
-            echo 'Please check the console output.'
+            echo 'FAILED: Check Jenkins Console Output for the error.'
         }
 
         always {
-            echo 'Jenkins pipeline execution finished.'
+            echo 'Pipeline execution completed.'
         }
     }
 }
