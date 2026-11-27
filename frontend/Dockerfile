@@ -1,12 +1,27 @@
+
+# Stage 1: Build React application
 FROM node:22-alpine AS build
+
 WORKDIR /app
+
+# Copy dependency files
 COPY package*.json ./
-RUN npm ci
+
+# Install dependencies
+RUN npm install
+
+# Copy frontend source
 COPY . .
-ENV VITE_API_URL=http://localhost:3001/api
+
+# Build production application
 RUN npm run build
 
-FROM nginx:1.27-alpine
-COPY --from=build /app/build /usr/share/nginx/html
+# Stage 2: Serve using Nginx
+FROM nginx:alpine
+
+# Copy Vite production build
+COPY --from=build /app/dist /usr/share/nginx/html
+
 EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]
