@@ -1,21 +1,37 @@
+
+# Stage 1: Build NestJS application
 FROM node:22-alpine AS build
 
 WORKDIR /app
 
+# Copy dependency files
 COPY package*.json ./
-RUN npm ci
 
+# Install dependencies
+RUN npm install
+
+# Copy backend source
 COPY . .
+
+# Build NestJS application
 RUN npm run build
 
-FROM node:22-alpine AS production
+# Stage 2: Production runtime
+FROM node:22-alpine
 
 WORKDIR /app
+
 ENV NODE_ENV=production
 
+# Copy package files
 COPY package*.json ./
-RUN npm ci --omit=dev
+
+# Install production dependencies
+RUN npm install --omit=dev
+
+# Copy compiled application
 COPY --from=build /app/dist ./dist
 
-EXPOSE 3001
-CMD ["node", "dist/main.js"]
+EXPOSE 3000
+
+CMD ["node", "dist/main"]
